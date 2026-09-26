@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spaced Repetition Trainer</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root {
+    --surface-1:      #1a1a19;
+    --surface-2:      #232322;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --series-blue:    #3987e5;
+    --series-red:     #e66767;
+    --status-good:    #0ca30c;
+    --status-critical:#e66767;
+  }
+  body {
+    background-color: #0d0d0d;
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+  .card {
+    background-color: var(--surface-1);
+    border: 1px solid rgba(255,255,255,0.10);
+  }
+  .topic-card {
+    cursor: pointer;
+    transition: transform .1s ease, border-color .15s ease;
+  }
+  .topic-card:hover {
+    border-color: var(--series-blue);
+    transform: translateY(-2px);
+  }
+  .answer-box {
+    background-color: var(--surface-2);
+    border: 1px dashed rgba(255,255,255,0.15);
+    border-radius: .5rem;
+    padding: 1rem;
+    white-space: pre-wrap;
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+  .badge-priority {
+    font-variant-numeric: tabular-nums;
+  }
+  .muted { color: var(--text-muted); }
+  .secondary-ink { color: var(--text-secondary); }
+  table.tabular td, table.tabular th { font-variant-numeric: tabular-nums; }
+
+  /* --- simple grouped bar chart (dataviz roles) --- */
+  .chart-wrap { background-color: var(--surface-1); border-radius: .5rem; padding: 1rem; }
+  .chart-row { display: flex; align-items: center; margin-bottom: 10px; }
+  .chart-day-label { width: 90px; flex-shrink: 0; color: var(--text-secondary); font-size: .85rem; }
+  .chart-bars { flex-grow: 1; display: flex; flex-direction: column; gap: 3px; }
+  .bar-track { display: flex; align-items: center; height: 14px; }
+  .bar-fill {
+    height: 10px;
+    border-radius: 4px;
+    min-width: 2px;
+  }
+  .bar-fill.answered { background-color: var(--status-good); }
+  .bar-fill.unanswered { background-color: var(--series-red); }
+  .bar-count { margin-left: 6px; font-size: .75rem; color: var(--text-secondary); }
+  .legend-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px;
+  }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg border-bottom" style="background-color:#141413;">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-semibold" href="#" onclick="showTopicsView(); return false;">🧠 SR Trainer</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showTopicsView(); return false;">Topics</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#importModal">Import CSV</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showStatsView(); return false;">Statistics</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#dataModal">View Data</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="exportCsv(); return false;">Export CSV</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-4" style="max-width:900px;">
+
+  <!-- TOPICS VIEW -->
+  <div id="view-topics" class="view active">
+    <h4 class="mb-3">Select a Topic</h4>
+    <div id="topicsEmpty" class="alert alert-secondary d-none">
+      No questions loaded yet. Use <strong>Import CSV</strong> from the menu to get started.
+    </div>
+    <div id="topicsList" class="row g-3"></div>
+  </div>
+
+  <!-- REVIEW VIEW -->
+  <div id="view-review" class="view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <span class="badge text-bg-primary" id="reviewTopicBadge"></span>
+        <span class="badge text-bg-secondary badge-priority ms-1" id="reviewPriorityBadge"></span>
+      </div>
+      <button class="btn btn-outline-light btn-sm" onclick="showTopicsView()">← Change Topic</button>
+    </div>
+
+    <div class="card p-4">
+      <h5 class="muted mb-2">Question</h5>
+      <p class="fs-5" id="questionText"></p>
+
+      <div id="answerSection" class="d-none mt-3">
+        <h6 class="muted">Answer</h6>
+        <div class="answer-box" id="answerText"></div>
+      </div>
+
+      <div class="mt-4 d-flex gap-2 flex-wrap">
+        <button class="btn btn-primary" id="showAnswerBtn" onclick="onShowAnswer()">Show Answer</button>
+        <button class="btn btn-success d-none" id="answeredBtn" onclick="onRecordResponse('answered')">Answered</button>
+        <button class="btn btn-warning d-none" id="unansweredBtn" onclick="onRecordResponse('unanswered')">Didn't Answer</button>
+      </div>
+    </div>
+    <p class="muted mt-2 small" id="reviewMeta"></p>
+  </div>
+
+  <!-- STATS VIEW -->
+  <div id="view-stats" class="view">
+    <h4 class="mb-3">Last 10 Days Statistics</h4>
+    <div class="mb-3 d-flex gap-3 flex-wrap align-items-center">
+      <span><span class="legend-dot" style="background-color:var(--series-blue)"></span>Attempted (shown)</span>
+      <span><span class="legend-dot" style="background-color:var(--status-good)"></span>Answered</span>
+      <span><span class="legend-dot" style="background-color:var(--series-red)"></span>Didn't Answer</span>
+    </div>
+    <div class="chart-wrap mb-4" id="statsChart"></div>
+
+    <h6 class="muted">Table view</h6>
+    <div class="table-responsive">
+      <table class="table table-dark table-sm tabular">
+        <thead><tr><th>Date</th><th>Attempted</th><th>Answered</th><th>Didn't Answer</th></tr></thead>
+        <tbody id="statsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Questions CSV</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="secondary-ink small">Columns expected: <code>id, question, topic, answer</code>. Existing IDs are updated (question/topic/answer only) — priority and lastShown are preserved.</p>
+        <input type="file" id="csvFileInput" class="form-control" accept=".csv,text/csv">
+        <div id="importResult" class="alert alert-info mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" onclick="handleImport()">Import</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DATA MODAL -->
+<div class="modal fade" id="dataModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Stored Data</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-2 flex-wrap">
+          <p class="secondary-ink small mb-0" id="dataCountLine"></p>
+          <div class="d-flex gap-2">
+            <input type="search" id="dataSearchInput" class="form-control form-control-sm" style="width:220px;" placeholder="Search id, topic, question, answer..." oninput="renderDataTable()">
+            <button type="button" class="btn btn-success btn-sm" onclick="addNewQuestion()">+ Add New</button>
+          </div>
+        </div>
+        <div class="table-responsive" style="max-height:50vh;">
+          <table class="table table-dark table-sm tabular align-middle">
+            <thead><tr><th>ID</th><th>Topic</th><th>Question</th><th>Answer</th><th>Priority</th><th>Last Shown</th><th></th></tr></thead>
+            <tbody id="dataTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <div>
+          <button type="button" class="btn btn-outline-warning btn-sm" onclick="resetProgress()">Reset Progress (priority/lastShown)</button>
+          <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearAllData()">Clear All Data</button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* =========================================================
+   IndexedDB layer
+   ========================================================= */
+const DB_NAME = 'srTrainerDB';
+const DB_VERSION = 1;
+const STORE_QUESTIONS = 'questions';
+const STORE_LOGS = 'logs';
+
+let dbPromise = null;
+
+function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_QUESTIONS)) {
+        db.createObjectStore(STORE_QUESTIONS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_LOGS)) {
+        db.createObjectStore(STORE_LOGS, { keyPath: 'logId', autoIncrement: true });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+  return dbPromise;
+}
+
+function tx(storeName, mode) {
+  return openDb().then(db => db.transaction(storeName, mode).objectStore(storeName));
+}
+
+function reqToPromise(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getAllQuestions() {
+  const store = await tx(STORE_QUESTIONS, 'readonly');
+  return reqToPromise(store.getAll());
+}
+
+async function getQuestion(id) {
+  const store = await tx(STORE_QUESTIONS, 'readonly');
+  return reqToPromise(store.get(id));
+}
+
+async function putQuestion(q) {
+  const store = await tx(STORE_QUESTIONS, 'readwrite');
+  return reqToPromise(store.put(q));
+}
+
+async function clearQuestions() {
+  const store = await tx(STORE_QUESTIONS, 'readwrite');
+  return reqToPromise(store.clear());
+}
+
+async function addLog(entry) {
+  const store = await tx(STORE_LOGS, 'readwrite');
+  return reqToPromise(store.add(entry));
+}
+
+async function getAllLogs() {
+  const store = await tx(STORE_LOGS, 'readonly');
+  return reqToPromise(store.getAll());
+}
+
+async function clearLogs() {
+  const store = await tx(STORE_LOGS, 'readwrite');
+  return reqToPromise(store.clear());
+}
+
+/* Bulk import: for each csv row, update question/topic/answer fields only,
+   preserving priority/lastShown if the id already exists. */
+async function bulkImport(rows) {
+  const db = await openDb();
+  const store = db.transaction(STORE_QUESTIONS, 'readwrite').objectStore(STORE_QUESTIONS);
+  let inserted = 0, updated = 0;
+
+  for (const row of rows) {
+    const existing = await reqToPromise(store.get(row.id));
+    if (existing) {
+      existing.question = row.question;
+      existing.topic = row.topic;
+      existing.answer = row.answer;
+      store.put(existing);
+      updated++;
+    } else {
+      store.put({
+        id: row.id,
+        question: row.question,
+        topic: row.topic,
+        answer: row.answer,
+        priority: 5,
+        lastShown: null
+      });
+      inserted++;
+    }
+  }
+  return { inserted, updated };
+}
+
+/* =========================================================
+   CSV parsing (handles quoted fields, escaped quotes, commas)
+   ========================================================= */
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  // normalize line endings
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') {
+        inQuotes = true;
+      } else if (c === ',') {
+        row.push(field); field = '';
+      } else if (c === '\n') {
+        row.push(field); field = '';
+        rows.push(row); row = [];
+      } else {
+        field += c;
+      }
+    }
+  }
+  // last field/row (if file doesn't end with newline)
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  // drop trailing empty rows
+  return rows.filter(r => !(r.length === 1 && r[0].trim() === ''));
+}
+
+function csvRowsToObjects(rows) {
+  if (rows.length === 0) return [];
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const idIdx = header.indexOf('id');
+  const qIdx = header.indexOf('question');
+  const tIdx = header.indexOf('topic');
+  const aIdx = header.indexOf('answer');
+  if (idIdx === -1 || qIdx === -1 || tIdx === -1 || aIdx === -1) {
+    throw new Error('CSV must contain columns: id, question, topic, answer');
+  }
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(c => c.trim() === '')) continue;
+    out.push({
+      id: (r[idIdx] || '').trim(),
+      question: (r[qIdx] || '').trim(),
+      topic: (r[tIdx] || '').trim(),
+      answer: (r[aIdx] || '').trim()
+    });
+  }
+  return out;
+}
+
+function csvEscape(value) {
+  const s = String(value ?? '');
+  if (/[",\n]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/* =========================================================
+   Weighted question selection
+   score = priority * (1 + log(1 + daysSinceLastShown))
+   never-shown => treated as maximally stale
+   ========================================================= */
+const MS_PER_DAY = 86400000;
+const NEVER_SHOWN_DAYS = 3650; // ~10 years: large but finite, so weighting math stays well-defined
+
+function daysSinceLastShown(lastShown) {
+  if (lastShown === null || lastShown === undefined) return NEVER_SHOWN_DAYS;
+  return Math.max(0, (Date.now() - lastShown) / MS_PER_DAY);
+}
+
+function staleFactor(days) {
+  return 1 + Math.log(1 + days);
+}
+
+function computeScore(q) {
+  return q.priority * staleFactor(daysSinceLastShown(q.lastShown));
+}
+
+function weightedPick(questions) {
+  const scores = questions.map(computeScore);
+  const total = scores.reduce((a, b) => a + b, 0);
+  if (total <= 0) return questions[Math.floor(Math.random() * questions.length)];
+  let r = Math.random() * total;
+  for (let i = 0; i < questions.length; i++) {
+    r -= scores[i];
+    if (r <= 0) return questions[i];
+  }
+  return questions[questions.length - 1];
+}
+
+/* =========================================================
+   App state & view switching
+   ========================================================= */
+let currentTopic = null;
+let currentQuestion = null;
+
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function showTopicsView() {
+  showView('view-topics');
+  await renderTopics();
+}
+
+async function showStatsView() {
+  showView('view-stats');
+  await renderStats();
+}
+
+async function renderTopics() {
+  const questions = await getAllQuestions();
+  const listEl = document.getElementById('topicsList');
+  const emptyEl = document.getElementById('topicsEmpty');
+  listEl.innerHTML = '';
+
+  if (questions.length === 0) {
+    emptyEl.classList.remove('d-none');
+    return;
+  }
+  emptyEl.classList.add('d-none');
+
+  const counts = {};
+  questions.forEach(q => { counts[q.topic] = (counts[q.topic] || 0) + 1; });
+  const topics = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+
+  topics.forEach(topic => {
+    const col = document.createElement('div');
+    col.className = 'col-md-4 col-sm-6';
+    col.innerHTML = `
+      <div class="card topic-card p-3 h-100" onclick="startTopic(${JSON.stringify(topic).replace(/"/g, '&quot;')})">
+        <h5 class="mb-1">${escapeHtml(topic)}</h5>
+        <span class="muted small">${counts[topic]} question${counts[topic] === 1 ? '' : 's'}</span>
+      </div>`;
+    listEl.appendChild(col);
+  });
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s ?? '';
+  return div.innerHTML;
+}
+
+async function startTopic(topic) {
+  currentTopic = topic;
+  showView('view-review');
+  await nextQuestion();
+}
+
+async function nextQuestion() {
+  const all = await getAllQuestions();
+  const pool = all.filter(q => q.topic === currentTopic);
+  if (pool.length === 0) {
+    showTopicsView();
+    return;
+  }
+  currentQuestion = weightedPick(pool);
+
+  // Update lastShown immediately upon display
+  currentQuestion.lastShown = Date.now();
+  await putQuestion(currentQuestion);
+  await addLog({ timestamp: Date.now(), questionId: currentQuestion.id, topic: currentQuestion.topic, event: 'shown' });
+
+  renderQuestion();
+}
+
+function renderQuestion() {
+  document.getElementById('reviewTopicBadge').textContent = currentQuestion.topic;
+  document.getElementById('reviewPriorityBadge').textContent = 'Priority ' + currentQuestion.priority;
+  document.getElementById('questionText').textContent = currentQuestion.question;
+  document.getElementById('answerText').textContent = currentQuestion.answer;
+  document.getElementById('answerSection').classList.add('d-none');
+  document.getElementById('showAnswerBtn').classList.remove('d-none');
+  document.getElementById('answeredBtn').classList.add('d-none');
+  document.getElementById('unansweredBtn').classList.add('d-none');
+  document.getElementById('reviewMeta').textContent = 'ID: ' + currentQuestion.id;
+}
+
+function onShowAnswer() {
+  document.getElementById('answerSection').classList.remove('d-none');
+  document.getElementById('showAnswerBtn').classList.add('d-none');
+  document.getElementById('answeredBtn').classList.remove('d-none');
+  document.getElementById('unansweredBtn').classList.remove('d-none');
+}
+
+async function onRecordResponse(result) {
+  if (!currentQuestion) return;
+  if (result === 'answered') {
+    currentQuestion.priority = Math.max(1, currentQuestion.priority - 1);
+  } else {
+    currentQuestion.priority = Math.min(10, currentQuestion.priority + 1);
+  }
+  await putQuestion(currentQuestion);
+  await addLog({ timestamp: Date.now(), questionId: currentQuestion.id, topic: currentQuestion.topic, event: result });
+  await nextQuestion();
+}
+
+/* =========================================================
+   CSV Import
+   ========================================================= */
+async function handleImport() {
+  const input = document.getElementById('csvFileInput');
+  const resultEl = document.getElementById('importResult');
+  resultEl.classList.remove('d-none', 'alert-danger', 'alert-info');
+
+  if (!input.files || input.files.length === 0) {
+    resultEl.classList.add('alert-danger');
+    resultEl.textContent = 'Please choose a CSV file first.';
+    return;
+  }
+
+  try {
+    const text = await input.files[0].text();
+    const rows = parseCSV(text);
+    const objects = csvRowsToObjects(rows);
+    if (objects.length === 0) {
+      throw new Error('No data rows found in file.');
+    }
+    const { inserted, updated } = await bulkImport(objects);
+    resultEl.classList.add('alert-info');
+    resultEl.textContent = `Imported: ${inserted} new, ${updated} updated.`;
+    await renderTopics();
+  } catch (err) {
+    resultEl.classList.add('alert-danger');
+    resultEl.textContent = 'Import failed: ' + err.message;
+  }
+}
+
+/* =========================================================
+   Export CSV
+   ========================================================= */
+async function exportCsv() {
+  const questions = await getAllQuestions();
+  const header = ['id', 'question', 'topic', 'answer', 'priority', 'lastShown'];
+  const lines = [header.join(',')];
+  questions.forEach(q => {
+    lines.push([
+      csvEscape(q.id),
+      csvEscape(q.question),
+      csvEscape(q.topic),
+      csvEscape(q.answer),
+      csvEscape(q.priority),
+      csvEscape(q.lastShown ? new Date(q.lastShown).toISOString() : '')
+    ].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sr_trainer_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* =========================================================
+   Data viewer / reset / clear
+   ========================================================= */
+document.getElementById('dataModal').addEventListener('show.bs.modal', renderDataTable);
+
+function computeNextId(questions) {
+  let maxNum = 0;
+  questions.forEach(q => {
+    const n = parseInt(q.id, 10);
+    if (!isNaN(n) && n > maxNum) maxNum = n;
+  });
+  return String(maxNum + 1);
+}
+
+function matchesSearch(q, term) {
+  if (!term) return true;
+  term = term.toLowerCase();
+  return String(q.id).toLowerCase().includes(term)
+    || String(q.topic).toLowerCase().includes(term)
+    || String(q.question).toLowerCase().includes(term)
+    || String(q.answer).toLowerCase().includes(term);
+}
+
+function makeEditableCell(value, onCommit, tag) {
+  const td = document.createElement('td');
+  const el = document.createElement(tag || 'input');
+  el.className = 'form-control form-control-sm';
+  if (tag === 'textarea') {
+    el.rows = 2;
+    el.value = value ?? '';
+  } else {
+    el.type = 'text';
+    el.value = value ?? '';
+  }
+  el.addEventListener('change', () => onCommit(el.value));
+  td.appendChild(el);
+  return td;
+}
+
+async function renderDataTable() {
+  const questions = await getAllQuestions();
+  const term = document.getElementById('dataSearchInput').value.trim();
+  const filtered = questions.filter(q => matchesSearch(q, term));
+  document.getElementById('dataCountLine').textContent =
+    `${filtered.length} of ${questions.length} question(s) shown.`;
+  const body = document.getElementById('dataTableBody');
+  body.innerHTML = '';
+  filtered
+    .sort((a, b) => a.topic.localeCompare(b.topic) || String(a.id).localeCompare(String(b.id)))
+    .forEach(q => {
+      const tr = document.createElement('tr');
+
+      const idTd = document.createElement('td');
+      idTd.textContent = q.id;
+      tr.appendChild(idTd);
+
+      tr.appendChild(makeEditableCell(q.topic, (v) => updateQuestionField(q.id, 'topic', v), 'input'));
+      tr.appendChild(makeEditableCell(q.question, (v) => updateQuestionField(q.id, 'question', v), 'textarea'));
+      tr.appendChild(makeEditableCell(q.answer, (v) => updateQuestionField(q.id, 'answer', v), 'textarea'));
+
+      const priorityTd = document.createElement('td');
+      const priorityInput = document.createElement('input');
+      priorityInput.type = 'number';
+      priorityInput.min = 1;
+      priorityInput.max = 10;
+      priorityInput.style.width = '70px';
+      priorityInput.className = 'form-control form-control-sm';
+      priorityInput.value = q.priority;
+      priorityInput.addEventListener('change', () => updateQuestionField(q.id, 'priority', priorityInput.value));
+      priorityTd.appendChild(priorityInput);
+      tr.appendChild(priorityTd);
+
+      const lastShownTd = document.createElement('td');
+      lastShownTd.className = 'small';
+      if (q.lastShown) {
+        lastShownTd.textContent = new Date(q.lastShown).toLocaleString();
+      } else {
+        const span = document.createElement('span');
+        span.className = 'muted';
+        span.textContent = 'never';
+        lastShownTd.appendChild(span);
+      }
+      tr.appendChild(lastShownTd);
+
+      const actionsTd = document.createElement('td');
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-outline-danger btn-sm';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => deleteQuestionRow(q.id));
+      actionsTd.appendChild(delBtn);
+      tr.appendChild(actionsTd);
+
+      body.appendChild(tr);
+    });
+}
+
+async function updateQuestionField(id, field, value) {
+  const q = await getQuestion(id);
+  if (!q) return;
+  if (field === 'priority') {
+    let n = parseInt(value, 10);
+    if (isNaN(n)) n = q.priority;
+    q.priority = Math.min(10, Math.max(1, n));
+  } else {
+    q[field] = value;
+  }
+  await putQuestion(q);
+  if (field === 'topic') await renderTopics();
+  await renderDataTable();
+}
+
+async function addNewQuestion() {
+  const questions = await getAllQuestions();
+  const newId = computeNextId(questions);
+  const newQuestion = { id: newId, topic: '', question: '', answer: '', priority: 5, lastShown: null };
+  await putQuestion(newQuestion);
+  document.getElementById('dataSearchInput').value = '';
+  await renderDataTable();
+  await renderTopics();
+}
+
+async function deleteQuestionRow(id) {
+  if (!confirm('Delete question ' + id + '?')) return;
+  const store = await tx(STORE_QUESTIONS, 'readwrite');
+  await reqToPromise(store.delete(id));
+  await renderDataTable();
+  await renderTopics();
+}
+
+async function resetProgress() {
+  if (!confirm('Reset priority to 5 and lastShown to never for ALL questions? Question content is kept.')) return;
+  const questions = await getAllQuestions();
+  for (const q of questions) {
+    q.priority = 5;
+    q.lastShown = null;
+    await putQuestion(q);
+  }
+  await renderDataTable();
+  await renderTopics();
+  alert('Progress reset for ' + questions.length + ' question(s).');
+}
+
+async function clearAllData() {
+  if (!confirm('This will permanently delete ALL questions and history logs. Continue?')) return;
+  await clearQuestions();
+  await clearLogs();
+  await renderDataTable();
+  await renderTopics();
+  bootstrap.Modal.getInstance(document.getElementById('dataModal'))?.hide();
+  showTopicsView();
+  alert('All data cleared.');
+}
+
+/* =========================================================
+   Statistics (last 10 days)
+   ========================================================= */
+function dayKey(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function dayLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+async function renderStats() {
+  const logs = await getAllLogs();
+
+  // Build last 10 days (oldest -> newest), including today
+  const days = [];
+  for (let i = 9; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(dayKey(d.getTime()));
+  }
+
+  const stats = {};
+  days.forEach(k => { stats[k] = { attempted: 0, answered: 0, unanswered: 0 }; });
+
+  const cutoff = Date.now() - 10 * MS_PER_DAY;
+  logs.filter(l => l.timestamp >= cutoff).forEach(l => {
+    const key = dayKey(l.timestamp);
+    if (!stats[key]) return;
+    if (l.event === 'shown') stats[key].attempted++;
+    else if (l.event === 'answered') stats[key].answered++;
+    else if (l.event === 'unanswered') stats[key].unanswered++;
+  });
+
+  // Chart
+  const maxVal = Math.max(1, ...days.map(k => Math.max(stats[k].attempted, stats[k].answered + stats[k].unanswered)));
+  const chartEl = document.getElementById('statsChart');
+  chartEl.innerHTML = '';
+  days.forEach(key => {
+    const s = stats[key];
+    const row = document.createElement('div');
+    row.className = 'chart-row';
+    const answeredPct = (s.answered / maxVal) * 100;
+    const unansweredPct = (s.unanswered / maxVal) * 100;
+    row.innerHTML = `
+      <div class="chart-day-label">${dayLabel(key)}</div>
+      <div class="chart-bars">
+        <div class="bar-track" title="Answered: ${s.answered}">
+          <div class="bar-fill answered" style="width:${answeredPct}%"></div>
+          <span class="bar-count">${s.answered} answered</span>
+        </div>
+        <div class="bar-track" title="Didn't Answer: ${s.unanswered}">
+          <div class="bar-fill unanswered" style="width:${unansweredPct}%"></div>
+          <span class="bar-count">${s.unanswered} didn't answer</span>
+        </div>
+      </div>
+      <div class="ms-2 muted small" style="width:110px; text-align:right;">${s.attempted} attempted</div>`;
+    chartEl.appendChild(row);
+  });
+
+  // Table
+  const body = document.getElementById('statsTableBody');
+  body.innerHTML = '';
+  days.slice().reverse().forEach(key => {
+    const s = stats[key];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${dayLabel(key)}</td><td>${s.attempted}</td><td>${s.answered}</td><td>${s.unanswered}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+/* =========================================================
+   Init
+   ========================================================= */
+window.addEventListener('DOMContentLoaded', () => {
+  showTopicsView();
+});
+</script>
+</body>
+</html>
