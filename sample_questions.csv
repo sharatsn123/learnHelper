@@ -1,0 +1,41 @@
+id,question,topic,answer
+1,"Why is string concatenation in a loop discouraged in Java, and what should you use instead?",Java,"Using `+` in a loop creates a new ""String"" object on every iteration because ""String"" is immutable, which is O(n^2) overall.
+
+```java
+// Inefficient: creates a new String each iteration
+String result = """";
+for (int i = 0; i < 1000; i++) {
+    result += i;
+}
+```
+
+Prefer ""StringBuilder"", which mutates an internal buffer instead of allocating a new object each time:
+
+```java
+// Efficient: mutates a single buffer
+StringBuilder sb = new StringBuilder();
+for (int i = 0; i < 1000; i++) {
+    sb.append(i);
+}
+String result = sb.toString();
+```"
+2,How do you find the second-highest salary per department in SQL using a window function?,SQL,"Use ""DENSE_RANK()"" partitioned by department, ordered by salary descending, then filter for rank 2.
+
+```sql
+SELECT dept_id, employee_id, salary
+FROM (
+    SELECT
+        dept_id,
+        employee_id,
+        salary,
+        DENSE_RANK() OVER (
+            PARTITION BY dept_id
+            ORDER BY salary DESC
+        ) AS salary_rank
+    FROM employees
+) ranked
+WHERE salary_rank = 2;
+```
+
+""DENSE_RANK"" is used instead of ""RANK"" so that ties in the highest salary don't skip rank 2 entirely."
+3,"Features of Java?",Java,"dummy features"

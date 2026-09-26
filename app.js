@@ -293,12 +293,21 @@ function renderQuestion() {
   document.getElementById('reviewTopicBadge').textContent = currentQuestion.topic;
   document.getElementById('reviewPriorityBadge').textContent = 'Priority ' + currentQuestion.priority;
   document.getElementById('questionText').textContent = currentQuestion.question;
-  document.getElementById('answerText').textContent = currentQuestion.answer;
+  renderAnswerMarkdown(currentQuestion.answer);
   document.getElementById('answerSection').classList.add('d-none');
   document.getElementById('showAnswerBtn').classList.remove('d-none');
   document.getElementById('answeredBtn').classList.add('d-none');
   document.getElementById('unansweredBtn').classList.add('d-none');
   document.getElementById('reviewMeta').textContent = 'ID: ' + currentQuestion.id;
+}
+
+function renderAnswerMarkdown(markdown) {
+  const box = document.getElementById('answerText');
+  const html = (typeof marked !== 'undefined') ? marked.parse(markdown ?? '') : escapeHtml(markdown ?? '');
+  box.innerHTML = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(html) : html;
+  if (typeof Prism !== 'undefined') {
+    Prism.highlightAllUnder(box);
+  }
 }
 
 function onShowAnswer() {
