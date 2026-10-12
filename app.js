@@ -308,6 +308,7 @@ function renderAnswerMarkdown(markdown) {
 }
 
 function onShowAnswer() {
+  currentQuestion.lastShown = Date.now();
   document.getElementById('answerSection').classList.remove('d-none');
   document.getElementById('showAnswerBtn').classList.add('d-none');
   document.getElementById('answeredBtn').classList.remove('d-none');
