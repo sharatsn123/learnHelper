@@ -191,24 +191,22 @@ function daysSinceLastShown(lastShown) {
   return Math.max(0, (Date.now() - lastShown) / MS_PER_DAY);
 }
 
-function staleFactor(days) {
-  return 1 + Math.log(1 + days);
-}
+const MS_PER_HOUR = 3600000;
+const RECENT_HOURS = 6;
 
+/* calculated priority = priority + floor(daysSinceLastShown / 7)
+   shown within the last 6 hours => 1 */
 function computeScore(q) {
-  return q.priority * staleFactor(daysSinceLastShown(q.lastShown));
+  if (q.lastShown && Date.now() - q.lastShown < RECENT_HOURS * MS_PER_HOUR) return 1;
+  return q.priority + Math.floor(daysSinceLastShown(q.lastShown) / 7);
 }
 
+/* Highest calculated priority wins; ties broken randomly. */
 function weightedPick(questions) {
   const scores = questions.map(computeScore);
-  const total = scores.reduce((a, b) => a + b, 0);
-  if (total <= 0) return questions[Math.floor(Math.random() * questions.length)];
-  let r = Math.random() * total;
-  for (let i = 0; i < questions.length; i++) {
-    r -= scores[i];
-    if (r <= 0) return questions[i];
-  }
-  return questions[questions.length - 1];
+  const max = Math.max(...scores);
+  const top = questions.filter((_, i) => scores[i] === max);
+  return top[Math.floor(Math.random() * top.length)];
 }
 
 /* =========================================================
@@ -280,9 +278,8 @@ async function nextQuestion() {
     return;
   }
   currentQuestion = weightedPick(pool);
+  //currentQuestion.lastShown = Date.now();
 
-  // Update lastShown immediately upon display
-  currentQuestion.lastShown = Date.now();
   await putQuestion(currentQuestion);
   await addLog({ timestamp: Date.now(), questionId: currentQuestion.id, topic: currentQuestion.topic, event: 'shown' });
 
@@ -322,7 +319,7 @@ async function onRecordResponse(result) {
   if (result === 'answered') {
     currentQuestion.priority = Math.max(1, currentQuestion.priority - 1);
   } else {
-    currentQuestion.priority = Math.min(10, currentQuestion.priority + 1);
+    currentQuestion.priority = 10//Math.min(10, currentQuestion.priority + 1);
   }
   await putQuestion(currentQuestion);
   await addLog({ timestamp: Date.now(), questionId: currentQuestion.id, topic: currentQuestion.topic, event: result });
