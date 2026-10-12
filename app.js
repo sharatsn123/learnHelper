@@ -566,19 +566,18 @@ async function renderStats() {
   }
 
   const stats = {};
-  days.forEach(k => { stats[k] = { attempted: 0, answered: 0, unanswered: 0 }; });
+  days.forEach(k => { stats[k] = { answered: 0, unanswered: 0 }; });
 
   const cutoff = Date.now() - 10 * MS_PER_DAY;
   logs.filter(l => l.timestamp >= cutoff).forEach(l => {
     const key = dayKey(l.timestamp);
     if (!stats[key]) return;
-    if (l.event === 'shown') stats[key].attempted++;
-    else if (l.event === 'answered') stats[key].answered++;
+    if (l.event === 'answered') stats[key].answered++;
     else if (l.event === 'unanswered') stats[key].unanswered++;
   });
 
   // Chart
-  const maxVal = Math.max(1, ...days.map(k => Math.max(stats[k].attempted, stats[k].answered + stats[k].unanswered)));
+  const maxVal = Math.max(1, ...days.map(k => stats[k].answered + stats[k].unanswered));
   const chartEl = document.getElementById('statsChart');
   chartEl.innerHTML = '';
   days.forEach(key => {
@@ -599,7 +598,7 @@ async function renderStats() {
           <span class="bar-count">${s.unanswered} didn't answer</span>
         </div>
       </div>
-      <div class="ms-2 muted small" style="width:110px; text-align:right;">${s.attempted} attempted</div>`;
+      <div class="ms-2 muted small" style="width:110px; text-align:right;">${s.answered + s.unanswered} total</div>`;
     chartEl.appendChild(row);
   });
 
@@ -609,7 +608,7 @@ async function renderStats() {
   days.slice().reverse().forEach(key => {
     const s = stats[key];
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${dayLabel(key)}</td><td>${s.attempted}</td><td>${s.answered}</td><td>${s.unanswered}</td>`;
+    tr.innerHTML = `<td>${dayLabel(key)}</td><td>${s.answered + s.unanswered}</td><td>${s.answered}</td><td>${s.unanswered}</td>`;
     body.appendChild(tr);
   });
 }
